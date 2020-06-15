@@ -109,3 +109,6 @@ cc-toolchain/
 Build/VcBuild
 Build/VcBuild.NoJIT
 Build/VcBuild.SWB
+
+#CLion
+.idea

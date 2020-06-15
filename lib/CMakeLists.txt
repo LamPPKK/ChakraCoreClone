@@ -10,7 +10,7 @@ if(CC_TARGETS_AMD64)
 endif()
 
 if(CAN_BUILD_WABT)
-    set(wabt_objects $<TARGET_OBJECTS:libwabt>)
+    set(wabt_objects $<TARGET_OBJECTS:wabt>)
     set(wabt_includes ${CHAKRACORE_SOURCE_DIR}/lib/wabt)
 endif()
 

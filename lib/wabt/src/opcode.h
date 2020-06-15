@@ -34,7 +34,7 @@ struct Opcode {
   //
   enum Enum : uint32_t {
 #define WABT_OPCODE(rtype, type1, type2, type3, mem_size, prefix, code, Name, \
-                    text)                                                     \
+                    text, decomp)                                             \
   Name,
 #include "src/opcode.def"
 #undef WABT_OPCODE
@@ -43,7 +43,7 @@ struct Opcode {
 
 // Static opcode objects.
 #define WABT_OPCODE(rtype, type1, type2, type3, mem_size, prefix, code, Name, \
-                    text)                                                     \
+                    text, decomp)                                             \
   static Opcode Name##_Opcode;
 #include "src/opcode.def"
 #undef WABT_OPCODE
@@ -59,10 +59,14 @@ struct Opcode {
   uint32_t GetCode() const { return GetInfo().code; }
   size_t GetLength() const { return GetBytes().size(); }
   const char* GetName() const { return GetInfo().name; }
+  const char* GetDecomp() const {
+    return *GetInfo().decomp ? GetInfo().decomp : GetInfo().name;
+  }
   Type GetResultType() const { return GetInfo().result_type; }
-  Type GetParamType1() const { return GetInfo().param1_type; }
-  Type GetParamType2() const { return GetInfo().param2_type; }
-  Type GetParamType3() const { return GetInfo().param3_type; }
+  Type GetParamType1() const { return GetInfo().param_types[0]; }
+  Type GetParamType2() const { return GetInfo().param_types[1]; }
+  Type GetParamType3() const { return GetInfo().param_types[2]; }
+  Type GetParamType(int n) const { return GetInfo().param_types[n - 1]; }
   Address GetMemorySize() const { return GetInfo().memory_size; }
 
   // Get the byte sequence for this opcode, including prefix.
@@ -93,10 +97,9 @@ struct Opcode {
 
   struct Info {
     const char* name;
+    const char* decomp;
     Type result_type;
-    Type param1_type;
-    Type param2_type;
-    Type param3_type;
+    Type param_types[3];
     Address memory_size;
     uint8_t prefix;
     uint32_t code;
@@ -105,7 +108,10 @@ struct Opcode {
 
   static uint32_t PrefixCode(uint8_t prefix, uint32_t code) {
     // For now, 8 bits is enough for all codes.
-    assert(code < 0x100);
+    if (code >= 0x100) {
+      // Clamp to 0xff, since we know that it is an invalid code.
+      code = 0xff;
+    }
     return (prefix << 8) | code;
   }
 

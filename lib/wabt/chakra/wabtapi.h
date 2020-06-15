@@ -4,13 +4,15 @@
 //-------------------------------------------------------------------------------------------------------
 #pragma once
 
+#include <cstdint>
+
 namespace Js
 {
     typedef void* Var;
 }
 typedef unsigned int uint;
-typedef __int32 int32;
-typedef __int64 int64;
+typedef std::int32_t int32;
+typedef std::int64_t int64;
 typedef int32 PropertyId;
 
 namespace ChakraWabt

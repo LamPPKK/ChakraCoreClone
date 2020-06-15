@@ -77,6 +77,8 @@ class Stream {
 
   void MoveData(size_t dst_offset, size_t src_offset, size_t size);
 
+  void Truncate(size_t size);
+
   void WABT_PRINTF_FORMAT(2, 3) Writef(const char* format, ...);
 
   // Specified as uint32_t instead of uint8_t so we can check if the value
@@ -106,7 +108,7 @@ class Stream {
   void WriteChar(char c,
                  const char* desc = nullptr,
                  PrintChars print_chars = PrintChars::No) {
-    WriteU8(c, desc, print_chars);
+    WriteU8(static_cast<unsigned char>(c), desc, print_chars);
   }
 
   // Dump memory as text, similar to the xxd format.
@@ -125,6 +127,8 @@ class Stream {
     WriteU8(static_cast<uint32_t>(value), desc, print_chars);
   }
 
+  virtual void Flush() {}
+
  protected:
   virtual Result WriteDataImpl(size_t offset,
                                const void* data,
@@ -132,6 +136,7 @@ class Stream {
   virtual Result MoveDataImpl(size_t dst_offset,
                               size_t src_offset,
                               size_t size) = 0;
+  virtual Result TruncateImpl(size_t size) = 0;
 
  private:
   template <typename T>
@@ -175,6 +180,7 @@ class MemoryStream : public Stream {
   Result MoveDataImpl(size_t dst_offset,
                       size_t src_offset,
                       size_t size) override;
+  Result TruncateImpl(size_t size) override;
 
  private:
   std::unique_ptr<OutputBuffer> buf_;
@@ -194,11 +200,14 @@ class FileStream : public Stream {
 
   bool is_open() const { return file_ != nullptr; }
 
+  void Flush() override;
+
  protected:
   Result WriteDataImpl(size_t offset, const void* data, size_t size) override;
   Result MoveDataImpl(size_t dst_offset,
                       size_t src_offset,
                       size_t size) override;
+  Result TruncateImpl(size_t size) override;
 
  private:
   FILE* file_;

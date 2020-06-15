@@ -71,7 +71,6 @@ static void ParseOptions(int argc, char* argv[]) {
     s_verbose++;
     s_log_stream = FileStream::CreateStdout();
   });
-  parser.AddHelpOption();
   parser.AddOption("debug-parser", "Turn on debugging the parser of wat files",
                    []() { s_debug_parsing = true; });
   parser.AddOption('d', "dump-module",
@@ -102,11 +101,12 @@ static void ParseOptions(int argc, char* argv[]) {
 static void WriteBufferToFile(string_view filename,
                               const OutputBuffer& buffer) {
   if (s_dump_module) {
+    std::unique_ptr<FileStream> stream = FileStream::CreateStdout();
     if (s_verbose) {
-      s_log_stream->Writef(";; dump\n");
+      stream->Writef(";; dump\n");
     }
     if (!buffer.data.empty()) {
-      s_log_stream->WriteMemoryDump(buffer.data.data(), buffer.data.size());
+      stream->WriteMemoryDump(buffer.data.data(), buffer.data.size());
     }
   }
 
@@ -126,35 +126,34 @@ int ProgramMain(int argc, char** argv) {
 
   ParseOptions(argc, argv);
 
-  std::unique_ptr<WastLexer> lexer = WastLexer::CreateFileLexer(s_infile);
-  if (!lexer) {
+  std::vector<uint8_t> file_data;
+  Result result = ReadFile(s_infile, &file_data);
+  std::unique_ptr<WastLexer> lexer = WastLexer::CreateBufferLexer(
+      s_infile, file_data.data(), file_data.size());
+  if (Failed(result)) {
     WABT_FATAL("unable to read file: %s\n", s_infile);
   }
 
   Errors errors;
   std::unique_ptr<Module> module;
   WastParseOptions parse_wast_options(s_features);
-  Result result =
-      ParseWatModule(lexer.get(), &module, &errors, &parse_wast_options);
+  result = ParseWatModule(lexer.get(), &module, &errors, &parse_wast_options);
+
+  if (Succeeded(result) && s_validate) {
+    ValidateOptions options(s_features);
+    result = ValidateModule(module.get(), &errors, options);
+  }
 
   if (Succeeded(result)) {
-    result = ResolveNamesModule(module.get(), &errors);
-
-    if (Succeeded(result) && s_validate) {
-      ValidateOptions options(s_features);
-      result = ValidateModule(module.get(), &errors, options);
-    }
+    MemoryStream stream(s_log_stream.get());
+    s_write_binary_options.features = s_features;
+    result = WriteBinaryModule(&stream, module.get(), s_write_binary_options);
 
     if (Succeeded(result)) {
-      MemoryStream stream(s_log_stream.get());
-      result = WriteBinaryModule(&stream, module.get(), s_write_binary_options);
-
-      if (Succeeded(result)) {
-        if (s_outfile.empty()) {
-          s_outfile = DefaultOuputName(s_infile);
-        }
-        WriteBufferToFile(s_outfile.c_str(), stream.output_buffer());
+      if (s_outfile.empty()) {
+        s_outfile = DefaultOuputName(s_infile);
       }
+      WriteBufferToFile(s_outfile.c_str(), stream.output_buffer());
     }
   }
 

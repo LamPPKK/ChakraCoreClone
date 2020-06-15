@@ -32,6 +32,19 @@ void Features::AddOptions(OptionParser* parser) {
 
 #include "src/feature.def"
 #undef WABT_FEATURE
+  parser->AddOption("enable-all", "Enable all features",
+                    [this]() { EnableAll(); });
+}
+
+void Features::UpdateDependencies() {
+  // Exception handling requires reference types.
+  if (exceptions_enabled_) {
+    reference_types_enabled_ = true;
+  }
+  // Reference types requires bulk memory.
+  if (reference_types_enabled_) {
+    bulk_memory_enabled_ = true;
+  }
 }
 
 }  // namespace wabt

@@ -39,26 +39,32 @@ class NameApplier : public ExprVisitor::DelegateNop {
   Result EndBlockExpr(BlockExpr*) override;
   Result OnBrExpr(BrExpr*) override;
   Result OnBrIfExpr(BrIfExpr*) override;
+  Result OnBrOnExnExpr(BrOnExnExpr*) override;
   Result OnBrTableExpr(BrTableExpr*) override;
   Result OnCallExpr(CallExpr*) override;
+  Result OnRefFuncExpr(RefFuncExpr*) override;
   Result OnCallIndirectExpr(CallIndirectExpr*) override;
   Result OnReturnCallExpr(ReturnCallExpr*) override;
   Result OnReturnCallIndirectExpr(ReturnCallIndirectExpr*) override;
-  Result OnGetGlobalExpr(GetGlobalExpr*) override;
-  Result OnGetLocalExpr(GetLocalExpr*) override;
+  Result OnGlobalGetExpr(GlobalGetExpr*) override;
+  Result OnGlobalSetExpr(GlobalSetExpr*) override;
   Result BeginIfExpr(IfExpr*) override;
   Result EndIfExpr(IfExpr*) override;
-  Result BeginIfExceptExpr(IfExceptExpr*) override;
-  Result EndIfExceptExpr(IfExceptExpr*) override;
+  Result OnLocalGetExpr(LocalGetExpr*) override;
+  Result OnLocalSetExpr(LocalSetExpr*) override;
+  Result OnLocalTeeExpr(LocalTeeExpr*) override;
   Result BeginLoopExpr(LoopExpr*) override;
   Result EndLoopExpr(LoopExpr*) override;
-  Result OnMemoryDropExpr(MemoryDropExpr*) override;
+  Result OnDataDropExpr(DataDropExpr*) override;
   Result OnMemoryInitExpr(MemoryInitExpr*) override;
-  Result OnSetGlobalExpr(SetGlobalExpr*) override;
-  Result OnSetLocalExpr(SetLocalExpr*) override;
-  Result OnTableDropExpr(TableDropExpr*) override;
+  Result OnElemDropExpr(ElemDropExpr*) override;
+  Result OnTableCopyExpr(TableCopyExpr*) override;
   Result OnTableInitExpr(TableInitExpr*) override;
-  Result OnTeeLocalExpr(TeeLocalExpr*) override;
+  Result OnTableGetExpr(TableGetExpr*) override;
+  Result OnTableSetExpr(TableSetExpr*) override;
+  Result OnTableGrowExpr(TableGrowExpr*) override;
+  Result OnTableSizeExpr(TableSizeExpr*) override;
+  Result OnTableFillExpr(TableFillExpr*) override;
   Result BeginTryExpr(TryExpr*) override;
   Result EndTryExpr(TryExpr*) override;
   Result OnThrowExpr(ThrowExpr*) override;
@@ -73,15 +79,17 @@ class NameApplier : public ExprVisitor::DelegateNop {
   Result UseNameForGlobalVar(Var* var);
   Result UseNameForTableVar(Var* var);
   Result UseNameForMemoryVar(Var* var);
-  Result UseNameForExceptVar(Var* var);
+  Result UseNameForEventVar(Var* var);
   Result UseNameForDataSegmentVar(Var* var);
   Result UseNameForElemSegmentVar(Var* var);
   Result UseNameForParamAndLocalVar(Func* func, Var* var);
   Result VisitFunc(Index func_index, Func* func);
   Result VisitGlobal(Global* global);
+  Result VisitEvent(Event* event);
   Result VisitExport(Index export_index, Export* export_);
   Result VisitElemSegment(Index elem_segment_index, ElemSegment* segment);
   Result VisitDataSegment(Index data_segment_index, DataSegment* segment);
+  Result VisitStart(Var* start_var);
 
   Module* module_ = nullptr;
   Func* current_func_ = nullptr;
@@ -173,12 +181,12 @@ Result NameApplier::UseNameForMemoryVar(Var* var) {
   return Result::Ok;
 }
 
-Result NameApplier::UseNameForExceptVar(Var* var) {
-  Exception* except = module_->GetExcept(*var);
-  if (!except) {
+Result NameApplier::UseNameForEventVar(Var* var) {
+  Event* event = module_->GetEvent(*var);
+  if (!event) {
     return Result::Error;
   }
-  UseNameForVar(except->name, var);
+  UseNameForVar(event->name, var);
   return Result::Ok;
 }
 
@@ -238,7 +246,7 @@ Result NameApplier::EndLoopExpr(LoopExpr* expr) {
   return Result::Ok;
 }
 
-Result NameApplier::OnMemoryDropExpr(MemoryDropExpr* expr) {
+Result NameApplier::OnDataDropExpr(DataDropExpr* expr) {
   CHECK_RESULT(UseNameForDataSegmentVar(&expr->var));
   return Result::Ok;
 }
@@ -248,13 +256,45 @@ Result NameApplier::OnMemoryInitExpr(MemoryInitExpr* expr)  {
   return Result::Ok;
 }
 
-Result NameApplier::OnTableDropExpr(TableDropExpr* expr)  {
+Result NameApplier::OnElemDropExpr(ElemDropExpr* expr)  {
   CHECK_RESULT(UseNameForElemSegmentVar(&expr->var));
   return Result::Ok;
 }
 
+Result NameApplier::OnTableCopyExpr(TableCopyExpr* expr) {
+  CHECK_RESULT(UseNameForTableVar(&expr->dst_table));
+  CHECK_RESULT(UseNameForTableVar(&expr->src_table));
+  return Result::Ok;
+}
+
 Result NameApplier::OnTableInitExpr(TableInitExpr* expr)  {
-  CHECK_RESULT(UseNameForElemSegmentVar(&expr->var));
+  CHECK_RESULT(UseNameForElemSegmentVar(&expr->segment_index));
+  CHECK_RESULT(UseNameForTableVar(&expr->table_index));
+  return Result::Ok;
+}
+
+Result NameApplier::OnTableGetExpr(TableGetExpr* expr)  {
+  CHECK_RESULT(UseNameForTableVar(&expr->var));
+  return Result::Ok;
+}
+
+Result NameApplier::OnTableSetExpr(TableSetExpr* expr)  {
+  CHECK_RESULT(UseNameForTableVar(&expr->var));
+  return Result::Ok;
+}
+
+Result NameApplier::OnTableGrowExpr(TableGrowExpr* expr)  {
+  CHECK_RESULT(UseNameForTableVar(&expr->var));
+  return Result::Ok;
+}
+
+Result NameApplier::OnTableSizeExpr(TableSizeExpr* expr)  {
+  CHECK_RESULT(UseNameForTableVar(&expr->var));
+  return Result::Ok;
+}
+
+Result NameApplier::OnTableFillExpr(TableFillExpr* expr)  {
+  CHECK_RESULT(UseNameForTableVar(&expr->var));
   return Result::Ok;
 }
 
@@ -267,6 +307,13 @@ Result NameApplier::OnBrExpr(BrExpr* expr) {
 Result NameApplier::OnBrIfExpr(BrIfExpr* expr) {
   string_view label = FindLabelByVar(&expr->var);
   UseNameForVar(label, &expr->var);
+  return Result::Ok;
+}
+
+Result NameApplier::OnBrOnExnExpr(BrOnExnExpr* expr) {
+  string_view label = FindLabelByVar(&expr->label_var);
+  UseNameForVar(label, &expr->label_var);
+  CHECK_RESULT(UseNameForEventVar(&expr->event_var));
   return Result::Ok;
 }
 
@@ -292,7 +339,7 @@ Result NameApplier::EndTryExpr(TryExpr*) {
 }
 
 Result NameApplier::OnThrowExpr(ThrowExpr* expr) {
-  CHECK_RESULT(UseNameForExceptVar(&expr->var));
+  CHECK_RESULT(UseNameForEventVar(&expr->var));
   return Result::Ok;
 }
 
@@ -301,10 +348,16 @@ Result NameApplier::OnCallExpr(CallExpr* expr) {
   return Result::Ok;
 }
 
+Result NameApplier::OnRefFuncExpr(RefFuncExpr* expr) {
+  CHECK_RESULT(UseNameForFuncVar(&expr->var));
+  return Result::Ok;
+}
+
 Result NameApplier::OnCallIndirectExpr(CallIndirectExpr* expr) {
   if (expr->decl.has_func_type) {
     CHECK_RESULT(UseNameForFuncTypeVar(&expr->decl.type_var));
   }
+  CHECK_RESULT(UseNameForTableVar(&expr->table));
   return Result::Ok;
 }
 
@@ -317,15 +370,16 @@ Result NameApplier::OnReturnCallIndirectExpr(ReturnCallIndirectExpr* expr) {
   if (expr->decl.has_func_type) {
     CHECK_RESULT(UseNameForFuncTypeVar(&expr->decl.type_var));
   }
+  CHECK_RESULT(UseNameForTableVar(&expr->table));
   return Result::Ok;
 }
 
-Result NameApplier::OnGetGlobalExpr(GetGlobalExpr* expr) {
+Result NameApplier::OnGlobalGetExpr(GlobalGetExpr* expr) {
   CHECK_RESULT(UseNameForGlobalVar(&expr->var));
   return Result::Ok;
 }
 
-Result NameApplier::OnGetLocalExpr(GetLocalExpr* expr) {
+Result NameApplier::OnLocalGetExpr(LocalGetExpr* expr) {
   CHECK_RESULT(UseNameForParamAndLocalVar(current_func_, &expr->var));
   return Result::Ok;
 }
@@ -340,28 +394,17 @@ Result NameApplier::EndIfExpr(IfExpr* expr) {
   return Result::Ok;
 }
 
-Result NameApplier::BeginIfExceptExpr(IfExceptExpr* expr) {
-  PushLabel(expr->true_.label);
-  CHECK_RESULT(UseNameForExceptVar(&expr->except_var));
-  return Result::Ok;
-}
-
-Result NameApplier::EndIfExceptExpr(IfExceptExpr* expr) {
-  PopLabel();
-  return Result::Ok;
-}
-
-Result NameApplier::OnSetGlobalExpr(SetGlobalExpr* expr) {
+Result NameApplier::OnGlobalSetExpr(GlobalSetExpr* expr) {
   CHECK_RESULT(UseNameForGlobalVar(&expr->var));
   return Result::Ok;
 }
 
-Result NameApplier::OnSetLocalExpr(SetLocalExpr* expr) {
+Result NameApplier::OnLocalSetExpr(LocalSetExpr* expr) {
   CHECK_RESULT(UseNameForParamAndLocalVar(current_func_, &expr->var));
   return Result::Ok;
 }
 
-Result NameApplier::OnTeeLocalExpr(TeeLocalExpr* expr) {
+Result NameApplier::OnLocalTeeExpr(LocalTeeExpr* expr) {
   CHECK_RESULT(UseNameForParamAndLocalVar(current_func_, &expr->var));
   return Result::Ok;
 }
@@ -385,6 +428,13 @@ Result NameApplier::VisitGlobal(Global* global) {
   return Result::Ok;
 }
 
+Result NameApplier::VisitEvent(Event* event) {
+  if (event->decl.has_func_type) {
+    CHECK_RESULT(UseNameForFuncTypeVar(&event->decl.type_var));
+  }
+  return Result::Ok;
+}
+
 Result NameApplier::VisitExport(Index export_index, Export* export_) {
   if (export_->kind == ExternalKind::Func) {
     UseNameForFuncVar(&export_->var);
@@ -396,8 +446,10 @@ Result NameApplier::VisitElemSegment(Index elem_segment_index,
                                      ElemSegment* segment) {
   CHECK_RESULT(UseNameForTableVar(&segment->table_var));
   CHECK_RESULT(visitor_.VisitExprList(segment->offset));
-  for (Var& var : segment->vars) {
-    CHECK_RESULT(UseNameForFuncVar(&var));
+  for (ElemExpr& elem_expr : segment->elem_exprs) {
+    if (elem_expr.kind == ElemExprKind::RefFunc) {
+      CHECK_RESULT(UseNameForFuncVar(&elem_expr.var));
+    }
   }
   return Result::Ok;
 }
@@ -409,18 +461,27 @@ Result NameApplier::VisitDataSegment(Index data_segment_index,
   return Result::Ok;
 }
 
+Result NameApplier::VisitStart(Var* start_var) {
+  CHECK_RESULT(UseNameForFuncVar(start_var));
+  return Result::Ok;
+}
+
 Result NameApplier::VisitModule(Module* module) {
   module_ = module;
   for (size_t i = 0; i < module->funcs.size(); ++i)
     CHECK_RESULT(VisitFunc(i, module->funcs[i]));
   for (size_t i = 0; i < module->globals.size(); ++i)
     CHECK_RESULT(VisitGlobal(module->globals[i]));
+  for (size_t i = 0; i < module->events.size(); ++i)
+    CHECK_RESULT(VisitEvent(module->events[i]));
   for (size_t i = 0; i < module->exports.size(); ++i)
     CHECK_RESULT(VisitExport(i, module->exports[i]));
   for (size_t i = 0; i < module->elem_segments.size(); ++i)
     CHECK_RESULT(VisitElemSegment(i, module->elem_segments[i]));
   for (size_t i = 0; i < module->data_segments.size(); ++i)
     CHECK_RESULT(VisitDataSegment(i, module->data_segments[i]));
+  for (size_t i = 0; i < module->starts.size(); ++i)
+    CHECK_RESULT(VisitStart(module->starts[i]));
   module_ = nullptr;
   return Result::Ok;
 }

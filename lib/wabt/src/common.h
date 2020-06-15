@@ -35,6 +35,7 @@
 #include "src/make-unique.h"
 #include "src/result.h"
 #include "src/string-view.h"
+#include "src/type.h"
 
 #define WABT_FATAL(...) fprintf(stderr, __VA_ARGS__), exit(1)
 #define WABT_ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
@@ -101,7 +102,56 @@
 #define PRIoffset PRIzx
 
 struct v128 {
-  uint32_t v[4];
+  v128() = default;
+  v128(uint32_t x0, uint32_t x1, uint32_t x2, uint32_t x3) {
+    set_u32(0, x0);
+    set_u32(1, x1);
+    set_u32(2, x2);
+    set_u32(3, x3);
+  }
+
+  bool operator==(const v128& other) const {
+    return std::equal(std::begin(v), std::end(v), std::begin(other.v));
+  }
+  bool operator!=(const v128& other) const { return !(*this == other); }
+
+  uint8_t u8(int lane) const { return To<uint8_t>(lane); }
+  uint16_t u16(int lane) const { return To<uint16_t>(lane); }
+  uint32_t u32(int lane) const { return To<uint32_t>(lane); }
+  uint64_t u64(int lane) const { return To<uint64_t>(lane); }
+  uint32_t f32_bits(int lane) const { return To<uint32_t>(lane); }
+  uint64_t f64_bits(int lane) const { return To<uint64_t>(lane); }
+
+  void set_u8(int lane, uint8_t x) { return From<uint8_t>(lane, x); }
+  void set_u16(int lane, uint16_t x) { return From<uint16_t>(lane, x); }
+  void set_u32(int lane, uint32_t x) { return From<uint32_t>(lane, x); }
+  void set_u64(int lane, uint64_t x) { return From<uint64_t>(lane, x); }
+  void set_f32_bits(int lane, uint32_t x) { return From<uint32_t>(lane, x); }
+  void set_f64_bits(int lane, uint64_t x) { return From<uint64_t>(lane, x); }
+
+  bool is_zero() const {
+    return std::all_of(std::begin(v), std::end(v),
+                       [](uint8_t x) { return x == 0; });
+  }
+  void set_zero() { std::fill(std::begin(v), std::end(v), 0); }
+
+  template <typename T>
+  T To(int lane) const {
+    static_assert(sizeof(T) <= sizeof(v), "Invalid cast!");
+    assert((lane + 1) * sizeof(T) <= sizeof(v));
+    T result;
+    memcpy(&result, &v[lane * sizeof(T)], sizeof(result));
+    return result;
+  }
+
+  template <typename T>
+  void From(int lane, T data) {
+    static_assert(sizeof(T) <= sizeof(v), "Invalid cast!");
+    assert((lane + 1) * sizeof(T) <= sizeof(v));
+    memcpy(&v[lane * sizeof(T)], &data, sizeof(data));
+  }
+
+  uint8_t v[16];
 };
 
 namespace wabt {
@@ -115,7 +165,7 @@ static const Index kInvalidIndex = ~0;
 static const Offset kInvalidOffset = ~0;
 
 template <typename Dst, typename Src>
-Dst Bitcast(Src&& value) {
+Dst WABT_VECTORCALL Bitcast(Src&& value) {
   static_assert(sizeof(Src) == sizeof(Dst), "Bitcast sizes must match.");
   Dst result;
   memcpy(&result, &value, sizeof(result));
@@ -160,8 +210,6 @@ enum class LabelType {
   Loop,
   If,
   Else,
-  IfExcept,
-  IfExceptElse,
   Try,
   Catch,
 
@@ -199,36 +247,48 @@ struct Location {
   };
 };
 
-// Matches binary format, do not change.
-enum class Type : int32_t {
-  I32 = -0x01,        // 0x7f
-  I64 = -0x02,        // 0x7e
-  F32 = -0x03,        // 0x7d
-  F64 = -0x04,        // 0x7c
-  V128 = -0x05,       // 0x7b
-  Anyfunc = -0x10,    // 0x70
-  ExceptRef = -0x18,  // 0x68
-  Func = -0x20,       // 0x60
-  Void = -0x40,       // 0x40
-  ___ = Void,         // Convenient for the opcode table in opcode.h
-  Any = 0,            // Not actually specified, but useful for type-checking
+enum class SegmentKind {
+  Active,
+  Passive,
+  Declared,
 };
-typedef std::vector<Type> TypeVector;
+
+// Used in test asserts for special expected values "nan:canonical" and
+// "nan:arithmetic"
+enum class ExpectedNan {
+  None,
+  Canonical,
+  Arithmetic,
+};
+
+// Matches binary format, do not change.
+enum SegmentFlags : uint8_t {
+  SegFlagsNone = 0,
+  SegPassive = 1,        // bit 0: Is passive
+  SegExplicitIndex = 2,  // bit 1: Has explict index (Implies table 0 if absent)
+  SegDeclared = 3,       // Only used for declared segments
+  SegUseElemExprs = 4,   // bit 2: Is elemexpr (Or else index sequence)
+
+  SegFlagMax = (SegUseElemExprs << 1) - 1,  // All bits set.
+};
 
 enum class RelocType {
-  FuncIndexLEB = 0,       // e.g. Immediate of call instruction
-  TableIndexSLEB = 1,     // e.g. Loading address of function
-  TableIndexI32 = 2,      // e.g. Function address in DATA
-  MemoryAddressLEB = 3,   // e.g. Memory address in load/store offset immediate
-  MemoryAddressSLEB = 4,  // e.g. Memory address in i32.const
-  MemoryAddressI32 = 5,   // e.g. Memory address in DATA
-  TypeIndexLEB = 6,       // e.g. Immediate type in call_indirect
-  GlobalIndexLEB = 7,     // e.g. Immediate of get_global inst
-  FunctionOffsetI32 = 8,  // e.g. Code offset in DWARF metadata
-  SectionOffsetI32 = 9,   // e.g. Section offset in DWARF metadata
+  FuncIndexLEB = 0,          // e.g. Immediate of call instruction
+  TableIndexSLEB = 1,        // e.g. Loading address of function
+  TableIndexI32 = 2,         // e.g. Function address in DATA
+  MemoryAddressLEB = 3,      // e.g. Memory address in load/store offset immediate
+  MemoryAddressSLEB = 4,     // e.g. Memory address in i32.const
+  MemoryAddressI32 = 5,      // e.g. Memory address in DATA
+  TypeIndexLEB = 6,          // e.g. Immediate type in call_indirect
+  GlobalIndexLEB = 7,        // e.g. Immediate of get_global inst
+  FunctionOffsetI32 = 8,     // e.g. Code offset in DWARF metadata
+  SectionOffsetI32 = 9,      // e.g. Section offset in DWARF metadata
+  EventIndexLEB = 10,        // Used in throw instructions
+  MemoryAddressRelSLEB = 11, // In PIC code, data address relative to __memory_base
+  TableIndexRelSLEB = 12,    // In PIC code, table index relative to __table_base
 
   First = FuncIndexLEB,
-  Last = SectionOffsetI32,
+  Last = TableIndexRelSLEB,
 };
 static const int kRelocTypeCount = WABT_ENUM_COUNT(RelocType);
 
@@ -253,11 +313,21 @@ enum class SymbolType {
   Data = 1,
   Global = 2,
   Section = 3,
+  Event = 4,
 };
 
-#define WABT_SYMBOL_FLAG_UNDEFINED 0x10
+enum class ComdatType {
+  Data = 0x0,
+  Function = 0x1,
+};
+
 #define WABT_SYMBOL_MASK_VISIBILITY 0x4
 #define WABT_SYMBOL_MASK_BINDING 0x3
+#define WABT_SYMBOL_FLAG_UNDEFINED 0x10
+#define WABT_SYMBOL_FLAG_EXPORTED 0x20
+#define WABT_SYMBOL_FLAG_EXPLICIT_NAME 0x40
+#define WABT_SYMBOL_FLAG_NO_STRIP 0x80
+#define WABT_SYMBOL_FLAG_MAX 0xff
 
 enum class SymbolVisibility {
   Default = 0,
@@ -276,10 +346,10 @@ enum class ExternalKind {
   Table = 1,
   Memory = 2,
   Global = 3,
-  Except = 4,
+  Event = 4,
 
   First = Func,
-  Last = Except,
+  Last = Event,
 };
 static const int kExternalKindCount = WABT_ENUM_COUNT(ExternalKind);
 
@@ -308,8 +378,9 @@ void InitStdio();
 extern const char* g_kind_name[];
 
 static WABT_INLINE const char* GetKindName(ExternalKind kind) {
-  assert(static_cast<int>(kind) < kExternalKindCount);
-  return g_kind_name[static_cast<size_t>(kind)];
+  return static_cast<int>(kind) < kExternalKindCount
+    ? g_kind_name[static_cast<size_t>(kind)]
+    : "<error_kind>";
 }
 
 /* reloc */
@@ -317,8 +388,9 @@ static WABT_INLINE const char* GetKindName(ExternalKind kind) {
 extern const char* g_reloc_type_name[];
 
 static WABT_INLINE const char* GetRelocTypeName(RelocType reloc) {
-  assert(static_cast<int>(reloc) < kRelocTypeCount);
-  return g_reloc_type_name[static_cast<size_t>(reloc)];
+  return static_cast<int>(reloc) < kRelocTypeCount
+    ? g_reloc_type_name[static_cast<size_t>(reloc)]
+    : "<error_reloc_type>";
 }
 
 /* symbol */
@@ -333,64 +405,10 @@ static WABT_INLINE const char* GetSymbolTypeName(SymbolType type) {
       return "data";
     case SymbolType::Section:
       return "section";
-  }
-  WABT_UNREACHABLE;
-}
-
-/* type */
-
-static WABT_INLINE const char* GetTypeName(Type type) {
-  switch (type) {
-    case Type::I32:
-      return "i32";
-    case Type::I64:
-      return "i64";
-    case Type::F32:
-      return "f32";
-    case Type::F64:
-      return "f64";
-    case Type::V128:
-      return "v128";
-    case Type::Anyfunc:
-      return "anyfunc";
-    case Type::Func:
-      return "func";
-    case Type::ExceptRef:
-      return "except_ref";
-    case Type::Void:
-      return "void";
-    case Type::Any:
-      return "any";
+    case SymbolType::Event:
+      return "event";
     default:
-      return "<type index>";
-  }
-  WABT_UNREACHABLE;
-}
-
-static WABT_INLINE bool IsTypeIndex(Type type) {
-  return static_cast<int32_t>(type) >= 0;
-}
-
-static WABT_INLINE Index GetTypeIndex(Type type) {
-  assert(IsTypeIndex(type));
-  return static_cast<Index>(type);
-}
-
-static WABT_INLINE TypeVector GetInlineTypeVector(Type type) {
-  assert(!IsTypeIndex(type));
-  switch (type) {
-    case Type::Void:
-      return TypeVector();
-
-    case Type::I32:
-    case Type::I64:
-    case Type::F32:
-    case Type::F64:
-    case Type::V128:
-      return TypeVector(&type, &type + 1);
-
-    default:
-      WABT_UNREACHABLE;
+      return "<error_symbol_type>";
   }
 }
 

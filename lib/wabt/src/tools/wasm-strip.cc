@@ -37,7 +37,6 @@ examples:
 static void ParseOptions(int argc, char** argv) {
   OptionParser parser("wasm-strip", s_description);
 
-  parser.AddHelpOption();
   parser.AddArgument("filename", OptionParser::ArgumentCount::One,
                      [](const char* argument) {
                        s_filename = argument;
@@ -59,7 +58,9 @@ class BinaryReaderStrip : public BinaryReaderNop {
     return true;
   }
 
-  Result BeginSection(BinarySection section_type, Offset size) override {
+  Result BeginSection(Index section_index,
+                      BinarySection section_type,
+                      Offset size) override {
     if (section_type == BinarySection::Custom) {
       return Result::Ok;
     }

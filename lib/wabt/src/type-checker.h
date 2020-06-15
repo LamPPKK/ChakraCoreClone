@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "src/common.h"
+#include "src/feature.h"
 #include "src/opcode.h"
 
 namespace wabt {
@@ -46,8 +47,7 @@ class TypeChecker {
     bool unreachable;
   };
 
-  TypeChecker() = default;
-  explicit TypeChecker(const ErrorCallback&);
+  explicit TypeChecker(const Features& features) : features_(features) {}
 
   void set_error_callback(const ErrorCallback& error_callback) {
     error_callback_ = error_callback;
@@ -59,16 +59,18 @@ class TypeChecker {
   Result GetLabel(Index depth, Label** out_label);
 
   Result BeginFunction(const TypeVector& sig);
+  Result OnAtomicFence(uint32_t consistency_model);
   Result OnAtomicLoad(Opcode);
+  Result OnAtomicNotify(Opcode);
   Result OnAtomicStore(Opcode);
   Result OnAtomicRmw(Opcode);
   Result OnAtomicRmwCmpxchg(Opcode);
   Result OnAtomicWait(Opcode);
-  Result OnAtomicWake(Opcode);
   Result OnBinary(Opcode);
   Result OnBlock(const TypeVector& param_types, const TypeVector& result_types);
   Result OnBr(Index depth);
   Result OnBrIf(Index depth);
+  Result OnBrOnExn(Index depth, const TypeVector& types);
   Result BeginBrTable();
   Result OnBrTableTarget(Index depth);
   Result EndBrTable();
@@ -84,38 +86,45 @@ class TypeChecker {
   Result OnDrop();
   Result OnElse();
   Result OnEnd();
-  Result OnGetGlobal(Type);
-  Result OnGetLocal(Type);
+  Result OnGlobalGet(Type);
+  Result OnGlobalSet(Type);
   Result OnIf(const TypeVector& param_types, const TypeVector& result_types);
-  Result OnIfExcept(const TypeVector& param_types,
-                    const TypeVector& result_types,
-                    const TypeVector& except_sig);
   Result OnLoad(Opcode);
+  Result OnLocalGet(Type);
+  Result OnLocalSet(Type);
+  Result OnLocalTee(Type);
   Result OnLoop(const TypeVector& param_types, const TypeVector& result_types);
   Result OnMemoryCopy();
-  Result OnMemoryDrop(Index);
+  Result OnDataDrop(Index);
   Result OnMemoryFill();
   Result OnMemoryGrow();
   Result OnMemoryInit(Index);
   Result OnMemorySize();
   Result OnTableCopy();
-  Result OnTableDrop(Index);
-  Result OnTableInit(Index);
+  Result OnElemDrop(Index);
+  Result OnTableInit(Index, Index);
+  Result OnTableGet(Type elem_type);
+  Result OnTableSet(Type elem_type);
+  Result OnTableGrow(Type elem_type);
+  Result OnTableSize();
+  Result OnTableFill(Type elem_type);
+  Result OnRefFuncExpr(Index func_index);
+  Result OnRefNullExpr(Type type);
+  Result OnRefIsNullExpr(Type type);
   Result OnRethrow();
   Result OnReturn();
-  Result OnSelect();
-  Result OnSetGlobal(Type);
-  Result OnSetLocal(Type);
+  Result OnSelect(Type expected);
   Result OnSimdLaneOp(Opcode, uint64_t);
   Result OnSimdShuffleOp(Opcode, v128);
   Result OnStore(Opcode);
-  Result OnTeeLocal(Type);
   Result OnTernary(Opcode);
   Result OnThrow(const TypeVector& sig);
   Result OnTry(const TypeVector& param_types, const TypeVector& result_types);
   Result OnUnary(Opcode);
   Result OnUnreachable();
   Result EndFunction();
+
+  static Result CheckType(Type actual, Type expected);
 
  private:
   void WABT_PRINTF_FORMAT(2, 3) PrintError(const char* fmt, ...);
@@ -134,7 +143,6 @@ class TypeChecker {
   void PushType(Type type);
   void PushTypes(const TypeVector& types);
   Result CheckTypeStackEnd(const char* desc);
-  Result CheckType(Type actual, Type expected);
   Result CheckTypes(const TypeVector &actual, const TypeVector &expected);
   Result CheckSignature(const TypeVector& sig, const char* desc);
   Result CheckReturnSignature(const TypeVector& sig, const TypeVector &expected,const char *desc);
@@ -155,7 +163,7 @@ class TypeChecker {
 
   template <typename... Args>
   void PrintStackIfFailed(Result result, const char* desc, Args... args) {
-    // Minor optimzation, check result before constructing the vector to pass
+    // Minor optimization, check result before constructing the vector to pass
     // to the other overload of PrintStackIfFailed.
     if (Failed(result)) {
       PrintStackIfFailed(result, desc, {args...});
@@ -170,6 +178,7 @@ class TypeChecker {
   // Cache the expected br_table signature. It will be initialized to `nullptr`
   // to represent "any".
   TypeVector* br_table_sig_ = nullptr;
+  Features features_;
 };
 
 }  // namespace wabt

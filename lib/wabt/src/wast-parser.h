@@ -48,6 +48,11 @@ class WastParser {
   std::unique_ptr<Script> ReleaseScript();
 
  private:
+  enum class ConstType {
+    Normal,
+    Expectation,
+  };
+
   void ErrorUnlessOpcodeEnabled(const Token&);
 
   // Print an error message listing the expected tokens, as well as an example
@@ -113,16 +118,22 @@ class WastParser {
   // synchronized.
   Result Synchronize(SynchronizeFunc);
 
-  void ParseBindVarOpt(std::string* name);
+  bool ParseBindVarOpt(std::string* name);
   Result ParseVar(Var* out_var);
   bool ParseVarOpt(Var* out_var, Var default_var = Var());
   Result ParseOffsetExpr(ExprList* out_expr_list);
+  bool ParseOffsetExprOpt(ExprList* out_expr_list);
   Result ParseTextList(std::vector<uint8_t>* out_data);
   bool ParseTextListOpt(std::vector<uint8_t>* out_data);
   Result ParseVarList(VarVector* out_var_list);
-  bool ParseVarListOpt(VarVector* out_var_list);
+  bool ParseElemExprOpt(ElemExpr* out_elem_expr);
+  bool ParseElemExprListOpt(ElemExprVector* out_list);
+  bool ParseElemExprVarListOpt(ElemExprVector* out_list);
   Result ParseValueType(Type* out_type);
   Result ParseValueTypeList(TypeVector* out_type_list);
+  Result ParseRefKind(Type* out_type);
+  Result ParseRefType(Type* out_type);
+  bool ParseRefTypeOpt(Type* out_type);
   Result ParseQuotedText(std::string* text);
   bool ParseOffsetOpt(uint32_t* offset);
   bool ParseAlignOpt(uint32_t* align);
@@ -133,7 +144,7 @@ class WastParser {
   Result ParseModuleField(Module*);
   Result ParseDataModuleField(Module*);
   Result ParseElemModuleField(Module*);
-  Result ParseExceptModuleField(Module*);
+  Result ParseEventModuleField(Module*);
   Result ParseExportModuleField(Module*);
   Result ParseFuncModuleField(Module*);
   Result ParseTypeModuleField(Module*);
@@ -159,17 +170,22 @@ class WastParser {
   Result ParseTerminatingInstrList(ExprList*);
   Result ParseInstr(ExprList*);
   Result ParsePlainInstr(std::unique_ptr<Expr>*);
-  Result ParseConst(Const*);
-  Result ParseConstList(ConstVector*);
+  Result ParseF32(Const*, ConstType type);
+  Result ParseF64(Const*, ConstType type);
+  Result ParseConst(Const*, ConstType type);
+  Result ParseExternref(Const*);
+  Result ParseExpectedNan(ExpectedNan* expected);
+  Result ParseConstList(ConstVector*, ConstType type);
   Result ParseBlockInstr(std::unique_ptr<Expr>*);
   Result ParseLabelOpt(std::string*);
   Result ParseEndLabelOpt(const std::string&);
   Result ParseBlockDeclaration(BlockDeclaration*);
   Result ParseBlock(Block*);
-  Result ParseIfExceptHeader(IfExceptExpr*);
   Result ParseExprList(ExprList*);
   Result ParseExpr(ExprList*);
   Result ParseGlobalType(Global*);
+  Result ParseField(Field*);
+  Result ParseFieldList(std::vector<Field>*);
 
   template <typename T>
   Result ParsePlainInstrVar(Location, std::unique_ptr<Expr>*);
@@ -182,8 +198,7 @@ class WastParser {
   Result ParseAssertInvalidCommand(CommandPtr*);
   Result ParseAssertMalformedCommand(CommandPtr*);
   Result ParseAssertReturnCommand(CommandPtr*);
-  Result ParseAssertReturnArithmeticNanCommand(CommandPtr*);
-  Result ParseAssertReturnCanonicalNanCommand(CommandPtr*);
+  Result ParseAssertReturnFuncCommand(CommandPtr*);
   Result ParseAssertTrapCommand(CommandPtr*);
   Result ParseAssertUnlinkableCommand(CommandPtr*);
   Result ParseActionCommand(CommandPtr*);
@@ -202,7 +217,7 @@ class WastParser {
   template <typename T>
   Result ParseAssertScriptModuleCommand(TokenType, CommandPtr*);
 
-  Result ParseSimdConst(Const*, Type, int32_t);
+  Result ParseSimdV128Const(Const*, TokenType, ConstType);
 
   void CheckImportOrdering(Module*);
 
@@ -217,12 +232,12 @@ class WastParser {
 Result ParseWatModule(WastLexer* lexer,
                       std::unique_ptr<Module>* out_module,
                       Errors*,
-                      WastParseOptions* options = nullptr);
+                      WastParseOptions* options);
 
 Result ParseWastScript(WastLexer* lexer,
                        std::unique_ptr<Script>* out_script,
                        Errors*,
-                       WastParseOptions* options = nullptr);
+                       WastParseOptions* options);
 
 }  // namespace wabt
 

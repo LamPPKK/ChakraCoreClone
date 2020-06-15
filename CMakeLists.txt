@@ -407,6 +407,7 @@ if(CLR_CMAKE_PLATFORM_XPLAT)
         -fasm-blocks
         -fms-extensions
         -fwrapv # Treat signed integer overflow as two's complement
+        -fexceptions
     )
 
     # Only disable RTTI in release builds so that TrackAlloc works for debug and test builds

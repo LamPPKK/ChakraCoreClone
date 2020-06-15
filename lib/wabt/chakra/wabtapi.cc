@@ -57,6 +57,41 @@ namespace ChakraWabt
     };
 }
 
+/* type */
+static WABT_INLINE const char* GetTypeName(Type type) {
+    switch (type) {
+//        case Type::I8:
+//            return "i8";
+//        case Type::I16:
+//            return "i16";
+        case Type::I32:
+            return "i32";
+        case Type::I64:
+            return "i64";
+        case Type::F32:
+            return "f32";
+        case Type::F64:
+            return "f64";
+        case Type::V128:
+            return "v128";
+//        case Type::Anyfunc:
+//            return "anyfunc";
+        case Type::Func:
+            return "func";
+        case Type::FuncRef:
+            return "funcref";
+//        case Type::ExceptRef:
+//            return "except_ref";
+        case Type::Void:
+            return "void";
+        case Type::Any:
+            return "any";
+        default:
+            return "<type index>";
+    }
+    WABT_UNREACHABLE;
+}
+
 Features GetWabtFeatures(const ChakraContext& ctx)
 {
     Features features;
@@ -88,7 +123,7 @@ uint TruncSizeT(size_t value)
     {
         throw WabtAPIError("Out of Memory");
     }
-    return (uint)value;
+    return static_cast<uint>(value);
 }
 
 void set_property(Context* ctx, Js::Var obj, PropertyId id, Js::Var value, const char* messageIfFailed)
@@ -152,15 +187,13 @@ void write_command_type(Context* ctx, CommandType type, Js::Var cmdObj)
         "assert_unlinkable",
         "assert_uninstantiable",
         "assert_return",
-        "assert_return_canonical_nan",
-        "assert_return_arithmetic_nan",
         "assert_trap",
         "assert_exhaustion",
     };
-    WABT_STATIC_ASSERT(sizeof(s_command_names) / sizeof(char*) == (int)CommandType::Last + 1);
-    uint i = (uint)type;
-    if (i > (uint)CommandType::Last)
-    {
+    WABT_STATIC_ASSERT(sizeof(s_command_names) / sizeof(char*) == static_cast<int>(CommandType::Last) + 1);
+
+    uint i = static_cast<uint>(type);
+    if (i > static_cast<uint>(CommandType::Last)) {
         throw WabtAPIError("invalid command type");
     }
     write_string(ctx, cmdObj, PropertyIds::type, s_command_names[i]);
@@ -170,34 +203,32 @@ Js::Var create_const_vector(Context* ctx, const ConstVector& consts)
 {
     Js::Var constsArr = ctx->chakra->spec->createArray(ctx->chakra->user_data);
 
-    size_t i;
-    for (i = 0; i < consts.size(); ++i)
+    for (size_t i = 0; i < consts.size(); ++i)
     {
         Js::Var constDescriptor = ctx->chakra->spec->createObject(ctx->chakra->user_data);
         ctx->chakra->spec->push(constsArr, constDescriptor, ctx->chakra->user_data);
 
         char buf[32];
         const Const& const_ = consts.at(i);
-        switch (const_.type)
+        switch (const_.type())
         {
         case Type::I32:
             write_string(ctx, constDescriptor, PropertyIds::type, "i32");
-            wabt_snprintf(buf, 32, "%u", const_.u32);
+            wabt_snprintf(buf, 32, "%u", const_.u32());
             break;
         case Type::I64:
             write_string(ctx, constDescriptor, PropertyIds::type, "i64");
-            wabt_snprintf(buf, 32, "%llu", const_.u64);
+            wabt_snprintf(buf, 32, "%lu", const_.u64());
             break;
         case Type::F32:
             write_string(ctx, constDescriptor, PropertyIds::type, "f32");
-            wabt_snprintf(buf, 32, "%u", const_.f32_bits);
+            wabt_snprintf(buf, 32, "%u", const_.f32_bits());
             break;
         case Type::F64:
             write_string(ctx, constDescriptor, PropertyIds::type, "f64");
-            wabt_snprintf(buf, 32, "%llu", const_.f64_bits);
+            wabt_snprintf(buf, 32, "%lu", const_.f64_bits());
             break;
         default:
-            assert(0);
             throw WabtAPIError("invalid constant type");
         }
         write_string(ctx, constDescriptor, PropertyIds::value, buf);
@@ -218,6 +249,8 @@ Js::Var create_type_object(Context* ctx, Type type)
     return typeObj;
 }
 
+// TODO: to be removed
+#if 0
 void write_action_result_type(Context* ctx, Js::Var obj, PropertyId id, Script* script, const ActionPtr& action)
 {
     const Module* module = script->GetModule(action->module_var);
@@ -253,6 +286,7 @@ void write_action_result_type(Context* ctx, Js::Var obj, PropertyId id, Script* 
     }
     }
 }
+#endif
 
 void write_action(Context* ctx, Js::Var obj, const ActionPtr& action)
 {
@@ -332,7 +366,7 @@ static void write_invalid_module(Context* ctx, Js::Var obj, const ScriptModule* 
         }
     default:
         assert(false);
-        break;
+//        break;
     }
 }
 Js::Var write_commands(Context* ctx, Script* script)
@@ -341,7 +375,7 @@ Js::Var write_commands(Context* ctx, Script* script)
     Js::Var resultObj = ctx->chakra->spec->createObject(ctx->chakra->user_data);
     Js::Var commandsArr = ctx->chakra->spec->createArray(ctx->chakra->user_data);
     set_property(ctx, resultObj, PropertyIds::commands, commandsArr, "Unable to set commands");
-    wabt::Index last_module_index = (wabt::Index) - 1;
+    wabt::Index last_module_index = static_cast<wabt::Index>(-1);
     for (wabt::Index i = 0; i < script->commands.size(); ++i)
     {
         const Command* command = script->commands[i].get();
@@ -426,24 +460,6 @@ Js::Var write_commands(Context* ctx, Script* script)
             write_const_vector(ctx, cmdObj, PropertyIds::expected, assert_return_command->expected);
             break;
         }
-        case CommandType::AssertReturnCanonicalNan:
-        {
-            auto* assert_return_canonical_nan_command = cast<AssertReturnCanonicalNanCommand>(command);
-            write_location(ctx, cmdObj, &assert_return_canonical_nan_command->action->loc);
-            write_action(ctx, cmdObj, assert_return_canonical_nan_command->action);
-            write_action_result_type(ctx, cmdObj, PropertyIds::expected, script,
-                assert_return_canonical_nan_command->action);
-            break;
-        }
-        case CommandType::AssertReturnArithmeticNan:
-        {
-            auto* assert_return_arithmetic_nan_command = cast<AssertReturnArithmeticNanCommand>(command);
-            write_location(ctx, cmdObj, &assert_return_arithmetic_nan_command->action->loc);
-            write_action(ctx, cmdObj, assert_return_arithmetic_nan_command->action);
-            write_action_result_type(ctx, cmdObj, PropertyIds::expected, script,
-                assert_return_arithmetic_nan_command->action);
-            break;
-        }
         case CommandType::AssertTrap:
         {
             auto* assert_trap_command = cast<AssertTrapCommand>(command);
@@ -484,7 +500,7 @@ Js::Var ChakraWabt::ConvertWast2Wasm(ChakraContext& chakraCtx, char* buffer, uin
 {
     Validate(chakraCtx, isSpecText);
 
-    std::unique_ptr<WastLexer> lexer = WastLexer::CreateBufferLexer("", buffer, (size_t)bufferSize);
+    std::unique_ptr<WastLexer> lexer = WastLexer::CreateBufferLexer("", buffer, static_cast<size_t>(bufferSize));
 
     WastParseOptions options(GetWabtFeatures(chakraCtx));
     Context ctx;
