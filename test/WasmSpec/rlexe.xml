@@ -175,6 +175,21 @@
   <test>
     <default>
       <files>spec.js</files>
+      <baseline>baselines/testsuite/core/binary-leb128.baseline</baseline>
+      <compile-flags>-wasm -args testsuite/core/binary-leb128.wast -endargs</compile-flags>
+    </default>
+  </test>
+  <test>
+    <default>
+      <files>spec.js</files>
+      <baseline>baselines/testsuite/core/binary-leb128.baseline</baseline>
+      <compile-flags>-wasm -args testsuite/core/binary-leb128.wast -endargs -nonative</compile-flags>
+      <tags>exclude_dynapogo</tags>
+    </default>
+  </test>
+  <test>
+    <default>
+      <files>spec.js</files>
       <baseline>baselines/testsuite/core/block.baseline</baseline>
       <compile-flags>-wasm -args testsuite/core/block.wast -endargs</compile-flags>
     </default>
@@ -274,6 +289,21 @@
       <files>spec.js</files>
       <baseline>baselines/testsuite/core/call_indirect.baseline</baseline>
       <compile-flags>-wasm -args testsuite/core/call_indirect.wast -endargs -nonative</compile-flags>
+      <tags>exclude_dynapogo</tags>
+    </default>
+  </test>
+  <test>
+    <default>
+      <files>spec.js</files>
+      <baseline>baselines/testsuite/core/comments.baseline</baseline>
+      <compile-flags>-wasm -args testsuite/core/comments.wast -endargs</compile-flags>
+    </default>
+  </test>
+  <test>
+    <default>
+      <files>spec.js</files>
+      <baseline>baselines/testsuite/core/comments.baseline</baseline>
+      <compile-flags>-wasm -args testsuite/core/comments.wast -endargs -nonative</compile-flags>
       <tags>exclude_dynapogo</tags>
     </default>
   </test>
